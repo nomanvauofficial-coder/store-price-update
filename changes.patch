@@ -1,0 +1,787 @@
+From 2f52780fa6d13628578e3cc6442227308d998494 Mon Sep 17 00:00:00 2001
+From: claude <c@x>
+Date: Mon, 16 Nov 2026 06:22:23 +0000
+Subject: [PATCH] Postgres (Supabase), product images, hashed admin password
+
+---
+ .env.example                                  |  10 ++
+ .gitignore                                    |   6 ++
+ db/custom.db                                  | Bin 36864 -> 0 bytes
+ next.config.ts                                |   8 +-
+ package.json                                  |   4 +-
+ prisma/schema.prisma                          |  13 ++-
+ prisma/seed.ts                                |   1 -
+ src/app/api/admin/data/route.ts               |   2 +
+ src/app/api/admin/login/route.ts              |   6 +-
+ .../api/admin/products/[id]/image/route.ts    |  60 +++++++++++
+ src/app/api/admin/settings/route.ts           |  16 ++-
+ src/app/api/products/[id]/image/route.ts      |  26 +++++
+ src/app/api/products/route.ts                 |   2 +
+ src/components/admin/products-tab.tsx         | 100 +++++++++++++++++-
+ src/components/admin/settings-tab.tsx         |  21 +++-
+ src/components/admin/types.ts                 |   1 +
+ src/components/price-board/price-card.tsx     |  10 ++
+ src/lib/auth.ts                               |  34 +++++-
+ src/lib/db.ts                                 |  21 +---
+ 19 files changed, 298 insertions(+), 43 deletions(-)
+ create mode 100644 .env.example
+ create mode 100644 .gitignore
+ delete mode 100644 db/custom.db
+ create mode 100644 src/app/api/admin/products/[id]/image/route.ts
+ create mode 100644 src/app/api/products/[id]/image/route.ts
+
+diff --git a/.env.example b/.env.example
+new file mode 100644
+index 0000000..9a2252e
+--- /dev/null
++++ b/.env.example
+@@ -0,0 +1,10 @@
++# Supabase -> Project Settings -> Database -> Connection string
++# Pooled (Transaction, port 6543):
++DATABASE_URL="postgresql://postgres.xxxx:PASSWORD@aws-0-xx.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1"
++# Direct (port 5432) - used for creating tables:
++DIRECT_URL="postgresql://postgres.xxxx:PASSWORD@aws-0-xx.pooler.supabase.com:5432/postgres"
++
++# First login password (change it later from Admin -> Settings). Default: admin123
++ADMIN_PASSWORD="change-me"
++# Optional long random text for login cookie signing
++ADMIN_SECRET=""
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..f16fc0d
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,6 @@
++node_modules
++.next
++.env
++.env.*
++!.env.example
++*.log
+diff --git a/db/custom.db b/db/custom.db
+deleted file mode 100644
+index ee84c865e7789d0b09a76bfe1326d7ecca3d8365..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+
+literal 36864
+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
+
+diff --git a/next.config.ts b/next.config.ts
+index c75c236..1860a05 100644
+--- a/next.config.ts
++++ b/next.config.ts
+@@ -1,13 +1,7 @@
+ import type { NextConfig } from "next";
+ 
+ const nextConfig: NextConfig = {
+-  // Note: "output: standalone" is only for Docker/self-hosting.
+-  // On Vercel it causes 404 NOT_FOUND — must NOT be set here.
+-  // Include the SQLite database file in the serverless bundle
+-  // so Prisma can read it in production.
+-  outputFileTracingIncludes: {
+-    "/**": ["./db/**"],
+-  },
++  // Do NOT set output: "standalone" on Vercel (causes 404).
+   typescript: {
+     ignoreBuildErrors: true,
+   },
+diff --git a/package.json b/package.json
+index 9628c15..1147b32 100644
+--- a/package.json
++++ b/package.json
+@@ -5,10 +5,10 @@
+   "scripts": {
+     "postinstall": "prisma generate",
+     "dev": "next dev -p 3000 2>&1 | tee dev.log",
+-    "build": "next build",
++    "build": "prisma db push --skip-generate && next build",
+     "start": "next start",
+     "lint": "eslint .",
+-    "db:push": "prisma db push --accept-data-loss",
++    "db:push": "prisma db push",
+     "db:generate": "prisma generate",
+     "db:migrate": "prisma migrate dev",
+     "db:reset": "prisma migrate reset"
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index 76ef7a6..0282c6b 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -3,8 +3,9 @@ generator client {
+ }
+ 
+ datasource db {
+-  provider = "sqlite"
+-  url      = env("DATABASE_URL")
++  provider  = "postgresql"
++  url       = env("DATABASE_URL")
++  directUrl = env("DIRECT_URL")
+ }
+ 
+ model Category {
+@@ -24,6 +25,7 @@ model Product {
+   isActive   Boolean      @default(true)
+   category   Category     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+   prices     PriceEntry[]
++  image      ProductImage?
+   createdAt  DateTime     @default(now())
+   updatedAt  DateTime     @updatedAt
+ }
+@@ -45,3 +47,10 @@ model Setting {
+   value String
+   updatedAt DateTime @updatedAt
+ }
++
++model ProductImage {
++  productId Int      @id
++  data      String // data URL (small, resized JPEG)
++  updatedAt DateTime @updatedAt
++  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
++}
+diff --git a/prisma/seed.ts b/prisma/seed.ts
+index daae4f7..b69d9c2 100644
+--- a/prisma/seed.ts
++++ b/prisma/seed.ts
+@@ -135,7 +135,6 @@ async function main() {
+     data: [
+       { key: 'shopName', value: 'মুদি ঘর' },
+       { key: 'announcement', value: 'আজ পেঁয়াজ, টমেটো ও সয়াবিন তেলের দাম কমেছে। প্রতিদিন সকাল ৮টায় নতুন দাম আপডেট করা হয়।' },
+-      { key: 'adminPassword', value: 'admin123' },
+     ],
+   })
+ 
+diff --git a/src/app/api/admin/data/route.ts b/src/app/api/admin/data/route.ts
+index e246759..9f3b0e7 100644
+--- a/src/app/api/admin/data/route.ts
++++ b/src/app/api/admin/data/route.ts
+@@ -23,6 +23,7 @@ export async function GET() {
+           products: {
+             orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+             include: {
++              image: { select: { updatedAt: true } },
+               prices: {
+                 where: { date: { in: [today, yesterday] } },
+                 orderBy: { date: 'desc' },
+@@ -43,6 +44,7 @@ export async function GET() {
+           id: p.id,
+           name: p.name,
+           unit: p.unit,
++          image: p.image ? `/api/products/${p.id}/image?v=${p.image.updatedAt.getTime()}` : null,
+           sortOrder: p.sortOrder,
+           isActive: p.isActive,
+           categoryId: p.categoryId,
+diff --git a/src/app/api/admin/login/route.ts b/src/app/api/admin/login/route.ts
+index 7f3b1a3..3088d3c 100644
+--- a/src/app/api/admin/login/route.ts
++++ b/src/app/api/admin/login/route.ts
+@@ -1,6 +1,6 @@
+ import { NextRequest, NextResponse } from 'next/server'
+ import { db } from '@/lib/db'
+-import { ADMIN_COOKIE, createToken, SESSION_COOKIE_OPTIONS } from '@/lib/auth'
++import { ADMIN_COOKIE, createToken, SESSION_COOKIE_OPTIONS, checkPassword, fallbackPassword } from '@/lib/auth'
+ 
+ export const dynamic = 'force-dynamic'
+ 
+@@ -14,9 +14,9 @@ export async function POST(req: NextRequest) {
+     }
+ 
+     const setting = await db.setting.findUnique({ where: { key: 'adminPassword' } })
+-    const correctPassword = setting?.value ?? 'admin123'
++    const ok = setting ? checkPassword(password, setting.value) : checkPassword(password, fallbackPassword())
+ 
+-    if (password !== correctPassword) {
++    if (!ok) {
+       return NextResponse.json({ error: 'ভুল পাসওয়ার্ড। আবার চেষ্টা করুন।' }, { status: 401 })
+     }
+ 
+diff --git a/src/app/api/admin/products/[id]/image/route.ts b/src/app/api/admin/products/[id]/image/route.ts
+new file mode 100644
+index 0000000..8f3b6a9
+--- /dev/null
++++ b/src/app/api/admin/products/[id]/image/route.ts
+@@ -0,0 +1,60 @@
++import { NextRequest, NextResponse } from 'next/server'
++import { db } from '@/lib/db'
++import { isAdmin } from '@/lib/auth'
++
++export const dynamic = 'force-dynamic'
++
++type Ctx = { params: Promise<{ id: string }> }
++
++const MAX_LEN = 300_000 // ~220KB; client resizes to a small JPEG first
++
++export async function POST(req: NextRequest, ctx: Ctx) {
++  if (!(await isAdmin())) {
++    return NextResponse.json({ error: 'অনুমতি নেই।' }, { status: 401 })
++  }
++  try {
++    const { id } = await ctx.params
++    const productId = Number(id)
++    if (!Number.isInteger(productId)) {
++      return NextResponse.json({ error: 'পণ্য পাওয়া যায়নি।' }, { status: 400 })
++    }
++    const body = await req.json()
++    const data = body?.dataUrl
++    if (typeof data !== 'string' || !/^data:image\/(jpeg|png|webp);base64,/.test(data)) {
++      return NextResponse.json({ error: 'ছবির ফরম্যাট ঠিক নয়।' }, { status: 400 })
++    }
++    if (data.length > MAX_LEN) {
++      return NextResponse.json({ error: 'ছবি অনেক বড়।' }, { status: 413 })
++    }
++    const exists = await db.product.findUnique({ where: { id: productId } })
++    if (!exists) return NextResponse.json({ error: 'পণ্য পাওয়া যায়নি।' }, { status: 404 })
++
++    await db.productImage.upsert({
++      where: { productId },
++      create: { productId, data },
++      update: { data },
++    })
++    return NextResponse.json({ ok: true })
++  } catch (error) {
++    console.error('POST /api/admin/products/[id]/image error:', error)
++    return NextResponse.json({ error: 'ছবি সংরক্ষণ করতে সমস্যা হয়েছে।' }, { status: 500 })
++  }
++}
++
++export async function DELETE(_req: NextRequest, ctx: Ctx) {
++  if (!(await isAdmin())) {
++    return NextResponse.json({ error: 'অনুমতি নেই।' }, { status: 401 })
++  }
++  try {
++    const { id } = await ctx.params
++    const productId = Number(id)
++    if (!Number.isInteger(productId)) {
++      return NextResponse.json({ error: 'পণ্য পাওয়া যায়নি।' }, { status: 400 })
++    }
++    await db.productImage.deleteMany({ where: { productId } })
++    return NextResponse.json({ ok: true })
++  } catch (error) {
++    console.error('DELETE /api/admin/products/[id]/image error:', error)
++    return NextResponse.json({ error: 'ছবি মুছতে সমস্যা হয়েছে।' }, { status: 500 })
++  }
++}
+diff --git a/src/app/api/admin/settings/route.ts b/src/app/api/admin/settings/route.ts
+index a945059..e990e8c 100644
+--- a/src/app/api/admin/settings/route.ts
++++ b/src/app/api/admin/settings/route.ts
+@@ -1,6 +1,6 @@
+ import { NextRequest, NextResponse } from 'next/server'
+ import { db } from '@/lib/db'
+-import { isAdmin } from '@/lib/auth'
++import { isAdmin, hashPassword, checkPassword, fallbackPassword, ADMIN_COOKIE, createToken, SESSION_COOKIE_OPTIONS } from '@/lib/auth'
+ 
+ export const dynamic = 'force-dynamic'
+ 
+@@ -12,6 +12,7 @@ export async function POST(req: NextRequest) {
+   try {
+     const body = await req.json()
+     const updates: { key: string; value: string }[] = []
++    let passwordChanged = false
+ 
+     if (typeof body?.shopName === 'string' && body.shopName.trim()) {
+       updates.push({ key: 'shopName', value: body.shopName.trim() })
+@@ -29,7 +30,14 @@ export async function POST(req: NextRequest) {
+           { status: 400 }
+         )
+       }
+-      updates.push({ key: 'adminPassword', value: newPassword })
++      const current = typeof body?.currentPassword === 'string' ? body.currentPassword : ''
++      const stored = await db.setting.findUnique({ where: { key: 'adminPassword' } })
++      const okCurrent = stored ? checkPassword(current, stored.value) : checkPassword(current, fallbackPassword())
++      if (!okCurrent) {
++        return NextResponse.json({ error: 'বর্তমান পাসওয়ার্ড ভুল।' }, { status: 401 })
++      }
++      updates.push({ key: 'adminPassword', value: hashPassword(newPassword) })
++      passwordChanged = true
+     }
+ 
+     if (updates.length === 0) {
+@@ -44,7 +52,9 @@ export async function POST(req: NextRequest) {
+       })
+     }
+ 
+-    return NextResponse.json({ ok: true })
++    const res = NextResponse.json({ ok: true })
++    if (passwordChanged) res.cookies.set(ADMIN_COOKIE, createToken(), SESSION_COOKIE_OPTIONS)
++    return res
+   } catch (error) {
+     console.error('POST /api/admin/settings error:', error)
+     return NextResponse.json({ error: 'সেটিংস সংরক্ষণ করতে সমস্যা হয়েছে।' }, { status: 500 })
+diff --git a/src/app/api/products/[id]/image/route.ts b/src/app/api/products/[id]/image/route.ts
+new file mode 100644
+index 0000000..3065fc0
+--- /dev/null
++++ b/src/app/api/products/[id]/image/route.ts
+@@ -0,0 +1,26 @@
++import { NextRequest, NextResponse } from 'next/server'
++import { db } from '@/lib/db'
++
++export const dynamic = 'force-dynamic'
++
++type Ctx = { params: Promise<{ id: string }> }
++
++export async function GET(_req: NextRequest, ctx: Ctx) {
++  const { id } = await ctx.params
++  const productId = Number(id)
++  if (!Number.isInteger(productId)) return new NextResponse(null, { status: 404 })
++
++  const img = await db.productImage.findUnique({ where: { productId } })
++  if (!img) return new NextResponse(null, { status: 404 })
++
++  const m = /^data:(image\/[a-z]+);base64,([\s\S]*)$/.exec(img.data)
++  if (!m) return new NextResponse(null, { status: 404 })
++
++  return new NextResponse(Buffer.from(m[2], 'base64'), {
++    headers: {
++      'Content-Type': m[1],
++      // URL carries ?v=<updatedAt>, so it is safe to cache for a long time
++      'Cache-Control': 'public, max-age=31536000, immutable',
++    },
++  })
++}
+diff --git a/src/app/api/products/route.ts b/src/app/api/products/route.ts
+index c8e0be5..70576c1 100644
+--- a/src/app/api/products/route.ts
++++ b/src/app/api/products/route.ts
+@@ -19,6 +19,7 @@ export async function GET() {
+             where: { isActive: true },
+             orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+             include: {
++              image: { select: { updatedAt: true } },
+               prices: {
+                 where: { date: { in: [today, yesterday] } },
+                 orderBy: { date: 'desc' },
+@@ -58,6 +59,7 @@ export async function GET() {
+               id: p.id,
+               name: p.name,
+               unit: p.unit,
++              image: p.image ? `/api/products/${p.id}/image?v=${p.image.updatedAt.getTime()}` : null,
+               todayPrice: todayEntry ? todayEntry.price : null,
+               yesterdayPrice: yesterdayEntry ? yesterdayEntry.price : null,
+               change,
+diff --git a/src/components/admin/products-tab.tsx b/src/components/admin/products-tab.tsx
+index 3024107..c27e251 100644
+--- a/src/components/admin/products-tab.tsx
++++ b/src/components/admin/products-tab.tsx
+@@ -1,7 +1,7 @@
+ "use client"
+ 
+-import { useEffect, useState } from "react"
+-import { Loader2, Pencil, Plus, Trash2 } from "lucide-react"
++import { useEffect, useRef, useState } from "react"
++import { ImagePlus, Loader2, Pencil, Plus, Trash2, X } from "lucide-react"
+ import { toast } from "sonner"
+ import { Button } from "@/components/ui/button"
+ import { Input } from "@/components/ui/input"
+@@ -57,6 +57,22 @@ type FormState = {
+   isActive: boolean
+ }
+ 
++// Resize to max 480px JPEG so images stay small (~30-60KB)
++async function resizeImage(file: File, max = 480): Promise<string> {
++  const bitmap = await createImageBitmap(file)
++  const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height))
++  const w = Math.round(bitmap.width * scale)
++  const h = Math.round(bitmap.height * scale)
++  const canvas = document.createElement("canvas")
++  canvas.width = w
++  canvas.height = h
++  const ctx = canvas.getContext("2d")!
++  ctx.fillStyle = "#ffffff"
++  ctx.fillRect(0, 0, w, h)
++  ctx.drawImage(bitmap, 0, 0, w, h)
++  return canvas.toDataURL("image/jpeg", 0.8)
++}
++
+ const emptyForm: FormState = {
+   name: "",
+   unit: "কেজি",
+@@ -73,6 +89,26 @@ export function ProductsTab({ data, reload }: Props) {
+   const [deleting, setDeleting] = useState<AdminCategory["products"][number] | null>(null)
+   const [deleteLoading, setDeleteLoading] = useState(false)
+   const [togglingId, setTogglingId] = useState<number | null>(null)
++  // undefined = unchanged, null = remove, string = new image (data URL)
++  const [imageData, setImageData] = useState<string | null | undefined>(undefined)
++  const fileRef = useRef<HTMLInputElement>(null)
++
++  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
++    const file = e.target.files?.[0]
++    e.target.value = ""
++    if (!file) return
++    if (!file.type.startsWith("image/")) {
++      toast.error("শুধু ছবি বেছে নিন।")
++      return
++    }
++    try {
++      setImageData(await resizeImage(file))
++    } catch {
++      toast.error("ছবি পড়া যায়নি।")
++    }
++  }
++
++  const previewSrc = imageData === undefined ? editing?.image ?? null : imageData
+ 
+   useEffect(() => {
+     if (dialogOpen) return
+@@ -81,6 +117,7 @@ export function ProductsTab({ data, reload }: Props) {
+ 
+   function openAdd() {
+     setEditing(null)
++    setImageData(undefined)
+     setForm({
+       ...emptyForm,
+       categoryId: data.categories[0] ? String(data.categories[0].id) : "",
+@@ -90,6 +127,7 @@ export function ProductsTab({ data, reload }: Props) {
+ 
+   function openEdit(p: AdminCategory["products"][number]) {
+     setEditing(p)
++    setImageData(undefined)
+     setForm({
+       name: p.name,
+       unit: p.unit,
+@@ -132,6 +170,21 @@ export function ProductsTab({ data, reload }: Props) {
+         toast.error(json?.error ?? "সংরক্ষণ করা যায়নি।")
+         return
+       }
++      const productId: number = editing ? editing.id : json?.product?.id
++      if (productId && imageData !== undefined) {
++        const imgRes =
++          imageData === null
++            ? await fetch(`/api/admin/products/${productId}/image`, { method: "DELETE" })
++            : await fetch(`/api/admin/products/${productId}/image`, {
++                method: "POST",
++                headers: { "Content-Type": "application/json" },
++                body: JSON.stringify({ dataUrl: imageData }),
++              })
++        if (!imgRes.ok) {
++          const j = await imgRes.json().catch(() => null)
++          toast.error(j?.error ?? "ছবি সংরক্ষণ করা যায়নি।")
++        }
++      }
+       toast.success(editing ? "পণ্য আপডেট হয়েছে।" : "নতুন পণ্য যোগ হয়েছে।")
+       setDialogOpen(false)
+       await reload()
+@@ -216,7 +269,17 @@ export function ProductsTab({ data, reload }: Props) {
+             {data.categories.flatMap((cat) =>
+               cat.products.map((p) => (
+                 <TableRow key={p.id} className={!p.isActive ? "opacity-60" : ""}>
+-                  <TableCell className="font-medium">{p.name}</TableCell>
++                  <TableCell className="font-medium">
++                    <div className="flex items-center gap-2">
++                      {p.image ? (
++                        // eslint-disable-next-line @next/next/no-img-element
++                        <img src={p.image} alt="" className="h-9 w-9 shrink-0 rounded-md border object-cover" />
++                      ) : (
++                        <div className="h-9 w-9 shrink-0 rounded-md border bg-muted" />
++                      )}
++                      {p.name}
++                    </div>
++                  </TableCell>
+                   <TableCell>
+                     <Badge variant="secondary" className="font-normal">
+                       {cat.name}
+@@ -282,6 +345,37 @@ export function ProductsTab({ data, reload }: Props) {
+             </DialogDescription>
+           </DialogHeader>
+           <div className="space-y-4">
++            <div className="space-y-2">
++              <Label>পণ্যের ছবি</Label>
++              <div className="flex items-center gap-3">
++                {previewSrc ? (
++                  // eslint-disable-next-line @next/next/no-img-element
++                  <img src={previewSrc} alt="" className="h-20 w-20 rounded-lg border object-cover" />
++                ) : (
++                  <div className="flex h-20 w-20 items-center justify-center rounded-lg border border-dashed text-muted-foreground">
++                    <ImagePlus className="h-6 w-6" aria-hidden />
++                  </div>
++                )}
++                <div className="flex flex-col gap-2">
++                  <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
++                  <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
++                    {previewSrc ? "ছবি বদলান" : "ছবি বেছে নিন"}
++                  </Button>
++                  {previewSrc && (
++                    <Button
++                      type="button"
++                      variant="ghost"
++                      size="sm"
++                      className="gap-1 text-[var(--price-up)]"
++                      onClick={() => setImageData(null)}
++                    >
++                      <X className="h-3.5 w-3.5" aria-hidden />
++                      ছবি সরান
++                    </Button>
++                  )}
++                </div>
++              </div>
++            </div>
+             <div className="space-y-2">
+               <Label htmlFor="p-name">পণ্যের নাম</Label>
+               <Input
+diff --git a/src/components/admin/settings-tab.tsx b/src/components/admin/settings-tab.tsx
+index 7790279..cfe902e 100644
+--- a/src/components/admin/settings-tab.tsx
++++ b/src/components/admin/settings-tab.tsx
+@@ -28,6 +28,7 @@ export function SettingsTab({ data, reload }: Props) {
+   const [announcement, setAnnouncement] = useState(data.announcement)
+   const [annSaving, setAnnSaving] = useState(false)
+ 
++  const [currentPassword, setCurrentPassword] = useState("")
+   const [password, setPassword] = useState("")
+   const [confirm, setConfirm] = useState("")
+   const [passSaving, setPassSaving] = useState(false)
+@@ -61,6 +62,10 @@ export function SettingsTab({ data, reload }: Props) {
+ 
+   function handlePasswordSave() {
+     if (passSaving) return
++    if (!currentPassword) {
++      toast.error("বর্তমান পাসওয়ার্ড দিন।")
++      return
++    }
+     if (password.trim().length < 4) {
+       toast.error("পাসওয়ার্ড কমপক্ষে ৪ অক্ষরের দিন।")
+       return
+@@ -69,7 +74,8 @@ export function SettingsTab({ data, reload }: Props) {
+       toast.error("দুটি পাসওয়ার্ড মিলছে না।")
+       return
+     }
+-    saveSettings({ adminPassword: password.trim() }, setPassSaving, "পাসওয়ার্ড পরিবর্তন হয়েছে।")
++    saveSettings({ adminPassword: password.trim(), currentPassword }, setPassSaving, "পাসওয়ার্ড পরিবর্তন হয়েছে।")
++    setCurrentPassword("")
+     setPassword("")
+     setConfirm("")
+   }
+@@ -152,6 +158,17 @@ export function SettingsTab({ data, reload }: Props) {
+         </CardHeader>
+         <CardContent>
+           <div className="flex flex-wrap items-end gap-3">
++            <div className="min-w-48 flex-1 space-y-2">
++              <Label htmlFor="s-cur">বর্তমান পাসওয়ার্ড</Label>
++              <Input
++                id="s-cur"
++                type="password"
++                value={currentPassword}
++                onChange={(e) => setCurrentPassword(e.target.value)}
++                dir="ltr"
++                autoComplete="current-password"
++              />
++            </div>
+             <div className="min-w-48 flex-1 space-y-2">
+               <Label htmlFor="s-pass">নতুন পাসওয়ার্ড</Label>
+               <Input
+@@ -176,7 +193,7 @@ export function SettingsTab({ data, reload }: Props) {
+             </div>
+             <Button
+               onClick={handlePasswordSave}
+-              disabled={passSaving || !password || !confirm}
++              disabled={passSaving || !currentPassword || !password || !confirm}
+               className="gap-2"
+             >
+               {passSaving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <KeyRound className="h-4 w-4" aria-hidden />}
+diff --git a/src/components/admin/types.ts b/src/components/admin/types.ts
+index 64e9f42..42c6ea1 100644
+--- a/src/components/admin/types.ts
++++ b/src/components/admin/types.ts
+@@ -2,6 +2,7 @@ export type AdminProduct = {
+   id: number
+   name: string
+   unit: string
++  image: string | null
+   sortOrder: number
+   isActive: boolean
+   categoryId: number
+diff --git a/src/components/price-board/price-card.tsx b/src/components/price-board/price-card.tsx
+index 8fdcec1..b740925 100644
+--- a/src/components/price-board/price-card.tsx
++++ b/src/components/price-board/price-card.tsx
+@@ -9,6 +9,7 @@ export type BoardProduct = {
+   id: number
+   name: string
+   unit: string
++  image?: string | null
+   todayPrice: number | null
+   yesterdayPrice: number | null
+   change: "up" | "down" | "same" | null
+@@ -33,6 +34,15 @@ export function PriceCard({ product, index }: { product: BoardProduct; index: nu
+       transition={{ duration: 0.25, delay: Math.min(index, 11) * 0.035, ease: "easeOut" }}
+       className="rounded-xl border bg-card p-4 shadow-sm transition-shadow hover:shadow-md"
+     >
++      {product.image && (
++        // eslint-disable-next-line @next/next/no-img-element
++        <img
++          src={product.image}
++          alt={product.name}
++          loading="lazy"
++          className="mb-3 aspect-square w-full rounded-lg border bg-muted object-cover"
++        />
++      )}
+       <div className="flex items-start justify-between gap-2">
+         <h3 className="text-[15px] font-semibold leading-snug">{product.name}</h3>
+         <Badge variant="secondary" className="shrink-0 font-normal">
+diff --git a/src/lib/auth.ts b/src/lib/auth.ts
+index 47e5098..7e4c2b1 100644
+--- a/src/lib/auth.ts
++++ b/src/lib/auth.ts
+@@ -2,7 +2,13 @@ import crypto from 'crypto'
+ import { cookies } from 'next/headers'
+ 
+ export const ADMIN_COOKIE = 'mudi_admin_session'
+-const SECRET = process.env.ADMIN_SECRET ?? 'mudi-ghor-local-shop-secret-2026'
++// Secret never lives in the repo: use ADMIN_SECRET, else derive from DATABASE_URL.
++const SECRET =
++  process.env.ADMIN_SECRET ||
++  crypto
++    .createHash('sha256')
++    .update('mudi-ghor:' + (process.env.DATABASE_URL ?? 'local-dev'))
++    .digest('hex')
+ const TTL_MS = 7 * 24 * 3600 * 1000 // 7 days
+ 
+ export function createToken(ttlMs = TTL_MS): string {
+@@ -37,3 +43,29 @@ export const SESSION_COOKIE_OPTIONS = {
+   path: '/',
+   maxAge: TTL_MS / 1000,
+ }
++
++/** Password hashing (scrypt). Stored as "scrypt$salt$hash". */
++export function hashPassword(password: string): string {
++  const salt = crypto.randomBytes(16).toString('hex')
++  const hash = crypto.scryptSync(password, salt, 64).toString('hex')
++  return `scrypt$${salt}$${hash}`
++}
++
++export function checkPassword(password: string, stored: string): boolean {
++  if (!stored.startsWith('scrypt$')) {
++    // legacy plain-text value
++    const a = Buffer.from(password)
++    const b = Buffer.from(stored)
++    return a.length === b.length && crypto.timingSafeEqual(a, b)
++  }
++  const [, salt, hash] = stored.split('$')
++  if (!salt || !hash) return false
++  const test = crypto.scryptSync(password, salt, 64)
++  const real = Buffer.from(hash, 'hex')
++  return test.length === real.length && crypto.timingSafeEqual(test, real)
++}
++
++/** Current admin password: DB (hashed) if changed, else ADMIN_PASSWORD env, else "admin123". */
++export function fallbackPassword(): string {
++  return process.env.ADMIN_PASSWORD || 'admin123'
++}
+diff --git a/src/lib/db.ts b/src/lib/db.ts
+index b7c82ab..5ba747a 100644
+--- a/src/lib/db.ts
++++ b/src/lib/db.ts
+@@ -1,27 +1,10 @@
+-import path from 'path'
+ import { PrismaClient } from '@prisma/client'
+ 
+ const globalForPrisma = globalThis as unknown as {
+   prisma: PrismaClient | undefined
+ }
+ 
+-/**
+- * Portable SQLite URL:
+- * - If DATABASE_URL env var is provided (e.g. on Vercel dashboard), use it.
+- * - Otherwise fall back to <project-root>/db/custom.db so the app works
+- *   on any machine / serverless platform (Vercel includes ./db via
+- *   outputFileTracingIncludes in next.config.ts).
+- */
+-function resolveDatabaseUrl(): string {
+-  const envUrl = process.env.DATABASE_URL
+-  if (envUrl && !envUrl.includes('/home/z')) return envUrl
+-  return `file:${path.join(process.cwd(), 'db', 'custom.db')}`
+-}
+-
+-export const db =
+-  globalForPrisma.prisma ??
+-  new PrismaClient({
+-    datasourceUrl: resolveDatabaseUrl(),
+-  })
++// DATABASE_URL (Supabase pooled URL) and DIRECT_URL are read from env by Prisma.
++export const db = globalForPrisma.prisma ?? new PrismaClient()
+ 
+ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
+-- 
+2.43.0
+
